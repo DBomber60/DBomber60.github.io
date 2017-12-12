@@ -1,0 +1,92 @@
+---
+output: html_document
+---
+
+In *Population stratification using a statistical model on hypergraphs*, Alexei Vazquez
+constructs a statistical model on a hypergraph to reflect the following intuition of the data generating process: elements (nodes) of the same group have the same probability to exhibit a certain attribute and thus to belong to the hyperedge representing that attribute.  
+In the model, the population (of nodes) is divided into $n_g$ groups. Let $g_i$, $i=1,...,n$, denote the group to which node $i$ belongs. The hypergraph is specified using the adjacency matrix $a$, where $a_{ij}=1$ if element $i$ belongs to edge $j$. Let $n$ denote the number of nodes in our hypergraph and $m$ the number of edges.  With probability $\theta_{ij}$ an element of group $i$ belongs to edge $j$. That is, $P({{a}_{ij}}=1|{{g}_{i},\theta})={{\theta }_{{{g}_{i}}j}}$. Furthermore, the parameters of the model can be packed into a $k\times n$ matrix:
+
+$\Theta =\left( \begin{matrix}
+   {{\theta }_{11}} & \ldots  & {{\theta }_{1m}}  \\
+   \vdots  & \ddots  & \vdots   \\
+   {{\theta }_{k1}} & \cdots  & {{\theta }_{km}}  \\
+\end{matrix} \right)$
+
+And the likelihood of the model can be written:
+
+$P(a|g,\theta )=\prod\limits_{i=1}^{n}{\prod\limits_{j=1}^{m}{\theta _{{{g}_{i}}j}^{{{a}_{ij}}}{{(1-\theta _{{{g}_{i}}j}^{{}})}^{1-{{a}_{ij}}}}}}$
+
+The example dataset Vazquez uses is a zoo dataset where a list of animals is given together with certain attributes characterizing them. Nodes are animals and edges consist of a list of animals with a given attribute. The first 5 rows (of 101) and 8 columns (of 21) are shown below:
+
+```{r, echo=FALSE}
+# data processing
+rm(list=ls())
+library(pander)
+source("zoo_em.R")
+set.seed(1)
+setwd("~/Documents/Research/12-7")
+
+zoo = read.csv("zoo.csv")
+animals = zoo$name
+
+pander((zoo[1:5,1:8]))
+zoo = zoo[,-c(1,18)] # remove type label and node label
+zoo$legs = factor(zoo$legs)
+M = model.matrix(~ ., data=zoo)
+
+```
+
+The model is fit to the data using the EM algorithm. My implementation is shown below. Additionally, the ML stratification for the case of 8 groups is shown below - which matches with the Vasquez output. The model appears to find logical groupings for the animals based on the attributes provided. 
+
+```{r, echo=TRUE, eval=FALSE}
+# M is the hypergraph adjacency matrix with n nodes and m columns (hyperedges)
+
+# updates the assignment vector -- Q is a n x k matrix 
+Q_update = function(Q,M,theta_hat,k) {
+  m = ncol(M); n = nrow(M)
+  for(i in (1:n)) {
+    mrow = t(array(rep(M[i,],2), dim = c(m,k)))
+    Th = theta_hat ^ mrow * (1-theta_hat) ^ (1-mrow)
+    Q[i,] = apply(Th,1,prod)/sum(apply(Th,1,prod)) # row 1 of Q matrix
+  }
+  return(Q)
+}
+
+# EM algorithm for a model where parameter Theta is a k x m matrix of probabilities
+# theta_iy represents P(M_xy = 1 | node x is in group i)
+
+zoo_em = function(M, k, tol=1e-8) {
+  m = ncol(M); n = nrow(M)
+  Q = array(0, dim = c(n,k)) # initialize Q
+  theta_hat = array(rbeta(k*m, 2,2), dim=c(k,m)) # initialize random theta hat
+  repeat {
+    Q.new = Q_update(Q,M,theta_hat,k)
+    if (max(abs(Q-Q.new)) < tol) break
+    Q = Q.new
+    theta_hat = (t(Q) %*% M)/colSums(Q)
+  }
+  return(apply(Q, 1, which.max))
+}
+  
+```
+
+
+```{r, echo=FALSE}
+k = 8
+assignments = zoo_em(M, k)
+
+groupanimals = list()
+for (i in 1:k) {
+  groupanimals[[i]] = (paste(animals[which(assignments == i)], sep=""))
+}
+
+pander(groupanimals)
+```
+
+
+
+
+
+
+
+
